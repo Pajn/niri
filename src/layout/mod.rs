@@ -76,6 +76,12 @@ pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
 
 #[derive(Debug, Clone, Copy)]
+pub struct InteractiveMoveData {
+    pub pointer_location: Point<f64, Logical>,
+    pub offset: Point<f64, Logical>,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct InteractiveResizeData {
     pub edges: ResizeEdge,
 }
@@ -173,6 +179,10 @@ pub trait LayoutElement {
 
     fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
+
+    fn set_interactive_move(&mut self, data: Option<InteractiveMoveData>);
+    fn cancel_interactive_move(&mut self);
+    fn interactive_move_data(&self) -> Option<InteractiveMoveData>;
 
     fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>);
     fn cancel_interactive_resize(&mut self);
@@ -2246,6 +2256,75 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn interactive_move_begin(&mut self, window: W::Id, point: Point<f64, Logical>) -> bool {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(&window) {
+                            return ws.interactive_move_begin(window, point);
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(&window) {
+                        return ws.interactive_move_begin(window, point);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn interactive_move_update(&mut self, window: &W::Id, delta: Point<f64, Logical>) -> bool {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            return ws.interactive_move_update(window, delta);
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        return ws.interactive_move_update(window, delta);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn interactive_move_end(&mut self, window: &W::Id) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.has_window(window) {
+                            ws.interactive_move_end(Some(window));
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces, .. } => {
+                for ws in workspaces {
+                    if ws.has_window(window) {
+                        ws.interactive_move_end(Some(window));
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
@@ -2681,6 +2760,14 @@ mod tests {
             None
         }
 
+        fn set_interactive_move(&mut self, _data: Option<InteractiveMoveData>) {}
+
+        fn cancel_interactive_move(&mut self) {}
+
+        fn interactive_move_data(&self) -> Option<InteractiveMoveData> {
+            None
+        }
+
         fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}
 
         fn cancel_interactive_resize(&mut self) {}
@@ -2729,6 +2816,10 @@ mod tests {
 
     fn arbitrary_view_offset_gesture_delta() -> impl Strategy<Value = f64> {
         prop_oneof![(-10f64..10f64), (-50000f64..50000f64),]
+    }
+
+    fn arbitrary_move_point() -> impl Strategy<Value = Point<f64, Logical>> {
+        any::<(f64, f64)>().prop_map(|(x, y)| Point::from((x.into(), y.into())))
     }
 
     fn arbitrary_resize_edge() -> impl Strategy<Value = ResizeEdge> {
@@ -2888,6 +2979,24 @@ mod tests {
         WorkspaceSwitchGestureEnd {
             cancelled: bool,
             is_touchpad: Option<bool>,
+        },
+        InteractiveMoveBegin {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            #[proptest(strategy = "arbitrary_move_point()")]
+            point: Point<f64, Logical>,
+        },
+        InteractiveMoveUpdate {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
+            #[proptest(strategy = "-20000f64..20000f64")]
+            dx: f64,
+            #[proptest(strategy = "-20000f64..20000f64")]
+            dy: f64,
+        },
+        InteractiveMoveEnd {
+            #[proptest(strategy = "1..=5usize")]
+            window: usize,
         },
         InteractiveResizeBegin {
             #[proptest(strategy = "1..=5usize")]
@@ -3336,6 +3445,15 @@ mod tests {
                     is_touchpad,
                 } => {
                     layout.workspace_switch_gesture_end(cancelled, is_touchpad);
+                }
+                Op::InteractiveMoveBegin { window, point } => {
+                    layout.interactive_move_begin(window, point);
+                }
+                Op::InteractiveMoveUpdate { window, dx, dy } => {
+                    layout.interactive_move_update(&window, Point::from((dx, dy)));
+                }
+                Op::InteractiveMoveEnd { window } => {
+                    layout.interactive_move_end(&window);
                 }
                 Op::InteractiveResizeBegin { window, edges } => {
                     layout.interactive_resize_begin(window, edges);
