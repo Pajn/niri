@@ -180,9 +180,9 @@ pub trait LayoutElement {
     fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
 
-    fn set_interactive_move(&mut self, data: Option<InteractiveMoveData>);
+    fn set_in_interactive_move(&mut self);
     fn cancel_interactive_move(&mut self);
-    fn interactive_move_data(&self) -> Option<InteractiveMoveData>;
+    fn is_in_interactive_move(&self) -> bool;
 
     fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>);
     fn cancel_interactive_resize(&mut self);
@@ -2760,12 +2760,12 @@ mod tests {
             None
         }
 
-        fn set_interactive_move(&mut self, _data: Option<InteractiveMoveData>) {}
+        fn set_in_interactive_move(&mut self) {}
 
         fn cancel_interactive_move(&mut self) {}
 
-        fn interactive_move_data(&self) -> Option<InteractiveMoveData> {
-            None
+        fn is_in_interactive_move(&self) -> bool {
+            false
         }
 
         fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}

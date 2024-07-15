@@ -339,7 +339,7 @@ impl TileData {
 
     pub fn update<W: LayoutElement>(&mut self, tile: &Tile<W>) {
         self.size = tile.tile_size();
-        self.interactively_moving = tile.window().interactive_move_data().is_some();
+        self.interactively_moving = tile.window().is_in_interactive_move();
         self.interactively_resizing_by_left_edge = tile
             .window()
             .interactive_resize_data()
@@ -2104,13 +2104,7 @@ impl<W: LayoutElement> Workspace<W> {
                 let col_off = Point::from((col_x, 0.));
                 let col_render_off = col.render_offset();
                 col.tiles_in_render_order().map(move |(tile, tile_off)| {
-                    let mut pos =
-                        view_off + col_off + col_render_off + tile_off + tile.render_offset();
-                    if let Some(ref move_) = self.interactive_move {
-                        if tile.window().id() == &move_.window {
-                            pos += move_.data.offset;
-                        }
-                    }
+                    let pos = view_off + col_off + col_render_off + tile_off + tile.render_offset();
                     // Round to physical pixels.
                     let pos = pos.to_physical_precise_round(scale).to_logical(scale);
                     (tile, pos)
@@ -2393,10 +2387,16 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let mut first = true;
-        for (tile, tile_pos) in self.tiles_with_render_positions() {
+        for (tile, mut tile_pos) in self.tiles_with_render_positions() {
             // For the active tile (which comes first), draw the focus ring.
             let focus_ring = first;
             first = false;
+
+            if let Some(move_) = &self.interactive_move {
+                if tile.window().id() == &move_.window {
+                    tile_pos += move_.data.offset;
+                }
+            }
 
             rv.extend(
                 tile.render(renderer, tile_pos, output_scale, focus_ring, target)
@@ -2638,11 +2638,12 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn interactive_move_begin(&mut self, window: W::Id, point: Point<f64, Logical>) -> bool {
-        let col = self
+        let col_idx = self
             .columns
-            .iter_mut()
-            .find(|col| col.contains(&window))
+            .iter()
+            .position(|col| col.contains(&window))
             .unwrap();
+        let col = &mut self.columns[col_idx];
 
         if col.is_fullscreen {
             return false;
@@ -2661,10 +2662,13 @@ impl<W: LayoutElement> Workspace<W> {
             original_window_loc,
             data: InteractiveMoveData {
                 pointer_location: point,
-                offset: Point::from((0f64, 0f64)),
+                offset: Point::from((0., 0.)),
             },
         };
+        tile.window_mut().set_in_interactive_move();
         self.interactive_move = Some(move_);
+        col.update_tile_sizes(true);
+        self.data[col_idx].update(col);
 
         // Stop ongoing animation.
         self.view_offset_adj = None;
@@ -2695,6 +2699,23 @@ impl<W: LayoutElement> Workspace<W> {
             if window != &move_.window {
                 return;
             }
+
+            let col_idx = self
+                .columns
+                .iter()
+                .position(|col| col.contains(window))
+                .unwrap();
+            let col = &mut self.columns[col_idx];
+
+            let tile = col
+                .tiles
+                .iter_mut()
+                .find(|tile| tile.window().id() == window)
+                .unwrap();
+
+            tile.window_mut().cancel_interactive_move();
+            col.update_tile_sizes(true);
+            self.data[col_idx].update(col);
         }
 
         self.interactive_move = None;
@@ -2812,12 +2833,6 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn refresh(&mut self, is_active: bool) {
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
-            let mut col_move_data = None;
-            if let Some(move_) = &self.interactive_move {
-                if col.contains(&move_.window) {
-                    col_move_data = Some(move_.data);
-                }
-            }
             let mut col_resize_data = None;
             if let Some(resize) = &self.interactive_resize {
                 if col.contains(&resize.window) {
@@ -2834,7 +2849,6 @@ impl<W: LayoutElement> Workspace<W> {
                 let active = is_active && self.active_column_idx == col_idx && active_in_column;
                 win.set_activated(active);
 
-                win.set_interactive_move(col_move_data);
                 win.set_interactive_resize(col_resize_data);
 
                 let border_config = win.rules().border.resolve_against(self.options.border);
@@ -2983,6 +2997,12 @@ impl<W: LayoutElement> Column<W> {
         self.move_animation.is_some() || self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
+    pub fn are_all_tiles_interactively_moving(&self) -> bool {
+        self.tiles
+            .iter()
+            .all(|tile| tile.window().is_in_interactive_move())
+    }
+
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
@@ -3125,7 +3145,10 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let width = width.resolve(&self.options, self.working_area.size.w);
-        let width = f64::max(f64::min(width, max_width), min_width);
+        let mut width = f64::max(f64::min(width, max_width), min_width);
+        if self.are_all_tiles_interactively_moving() {
+            width = 0.;
+        }
 
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
@@ -3140,7 +3163,9 @@ impl<W: LayoutElement> Column<W> {
         let mut auto_tiles_left = self.tiles.len();
 
         // Subtract all fixed-height tiles.
-        for (h, (min_size, max_size)) in zip(&mut heights, zip(&min_size, &max_size)) {
+        for ((h, tile), (min_size, max_size)) in
+            zip(zip(&mut heights, &self.tiles), zip(&min_size, &max_size))
+        {
             // Check if the tile has an exact height constraint.
             if min_size.h > 0. && min_size.h == max_size.h {
                 *h = WindowHeight::Fixed(min_size.h);
@@ -3154,7 +3179,9 @@ impl<W: LayoutElement> Column<W> {
                     *h = f64::max(*h, min_size.h);
                 }
 
-                height_left -= *h + self.options.gaps;
+                if !tile.window().is_in_interactive_move() {
+                    height_left -= *h + self.options.gaps;
+                }
                 auto_tiles_left -= 1;
             }
         }
@@ -3231,6 +3258,9 @@ impl<W: LayoutElement> Column<W> {
             let WindowHeight::Fixed(height) = h else {
                 unreachable!()
             };
+            if tile.window().is_in_interactive_move() {
+                continue;
+            }
 
             let size = Size::from((width, height));
             tile.request_tile_size(size, animate);
@@ -3238,16 +3268,12 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn width(&self) -> f64 {
+        if self.are_all_tiles_interactively_moving() {
+            return 0.;
+        }
         self.data
             .iter()
-            .map(|data| {
-                NotNan::new(if data.interactively_moving {
-                    0f64
-                } else {
-                    data.size.w
-                })
-                .unwrap()
-            })
+            .map(|data| NotNan::new(data.size.w).unwrap())
             .max()
             .map(NotNan::into_inner)
             .unwrap()

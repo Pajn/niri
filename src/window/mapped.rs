@@ -71,7 +71,7 @@ pub struct Mapped {
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
     /// State of an ongoing interactive move.
-    interactive_move: Option<InteractiveMoveData>,
+    is_in_interactive_move: bool,
 
     /// Last time interactive move was started.
     ///
@@ -148,7 +148,7 @@ impl Mapped {
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
-            interactive_move: None,
+            is_in_interactive_move: false,
             last_interactive_move_start: Cell::new(None),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
@@ -634,16 +634,16 @@ impl LayoutElement for Mapped {
         self.animation_snapshot.take()
     }
 
-    fn set_interactive_move(&mut self, data: Option<InteractiveMoveData>) {
-        self.interactive_move = data;
+    fn set_in_interactive_move(&mut self) {
+        self.is_in_interactive_move = true;
     }
 
     fn cancel_interactive_move(&mut self) {
-        self.interactive_move = None;
+        self.is_in_interactive_move = false;
     }
 
-    fn interactive_move_data(&self) -> Option<InteractiveMoveData> {
-        self.interactive_move
+    fn is_in_interactive_move(&self) -> bool {
+        self.is_in_interactive_move
     }
 
     fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>) {

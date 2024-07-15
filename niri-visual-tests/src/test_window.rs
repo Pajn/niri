@@ -240,12 +240,12 @@ impl LayoutElement for TestWindow {
         None
     }
 
-    fn set_interactive_move(&mut self, _data: Option<InteractiveMoveData>) {}
+    fn set_in_interactive_move(&mut self) {}
 
     fn cancel_interactive_move(&mut self) {}
 
-    fn interactive_move_data(&self) -> Option<InteractiveMoveData> {
-        None
+    fn is_in_interactive_move(&self) -> bool {
+        false
     }
 
     fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}
