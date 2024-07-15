@@ -2649,12 +2649,22 @@ impl<W: LayoutElement> Workspace<W> {
             return false;
         }
 
-        let tile = col
+        let window_idx = col
             .tiles
-            .iter_mut()
-            .find(|tile| tile.window().id() == &window)
+            .iter()
+            .position(|tile| tile.window().id() == &window)
             .unwrap();
 
+        // Animate movement of other tiles.
+        // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
+        // than the others.
+        let offset_y = col.tile_offset(window_idx + 1).y - col.tile_offset(window_idx).y;
+        for tile in &mut col.tiles[window_idx + 1..] {
+            tile.animate_move_y_from(offset_y);
+        }
+
+        let column_width = col.width();
+        let tile = &mut col.tiles[window_idx];
         let original_window_loc = tile.window_loc();
 
         let move_ = InteractiveMove {
@@ -2665,6 +2675,7 @@ impl<W: LayoutElement> Workspace<W> {
                 offset: Point::from((0., 0.)),
             },
         };
+
         tile.window_mut().set_in_interactive_move();
         self.interactive_move = Some(move_);
         col.update_tile_sizes(true);
@@ -2672,6 +2683,20 @@ impl<W: LayoutElement> Workspace<W> {
 
         // Stop ongoing animation.
         self.view_offset_adj = None;
+
+        if col.width() == 0. {
+            // Animate movement of other columns.
+            let config = self.options.animations.window_movement.0;
+            if self.active_column_idx <= col_idx {
+                for col in &mut self.columns[col_idx + 1..] {
+                    col.animate_move_from_with_config(column_width, config);
+                }
+            } else {
+                for col in &mut self.columns[..col_idx] {
+                    col.animate_move_from_with_config(-column_width, config);
+                }
+            }
+        }
 
         true
     }
