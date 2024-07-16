@@ -19,8 +19,7 @@ use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
 use crate::layout::{
-    InteractiveMoveData, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
-    LayoutElementRenderSnapshot,
+    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
 };
 use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
@@ -69,9 +68,6 @@ pub struct Mapped {
 
     /// Snapshot right before an animated commit.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
-
-    /// State of an ongoing interactive move.
-    is_in_interactive_move: bool,
 
     /// Last time interactive move was started.
     ///
@@ -148,7 +144,6 @@ impl Mapped {
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
-            is_in_interactive_move: false,
             last_interactive_move_start: Cell::new(None),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
@@ -632,18 +627,6 @@ impl LayoutElement for Mapped {
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
         self.animation_snapshot.take()
-    }
-
-    fn set_in_interactive_move(&mut self) {
-        self.is_in_interactive_move = true;
-    }
-
-    fn cancel_interactive_move(&mut self) {
-        self.is_in_interactive_move = false;
-    }
-
-    fn is_in_interactive_move(&self) -> bool {
-        self.is_in_interactive_move
     }
 
     fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>) {

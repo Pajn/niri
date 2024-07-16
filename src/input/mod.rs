@@ -1343,7 +1343,8 @@ impl State {
                     };
                     if mod_down {
                         let location = pointer.current_location();
-                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
+                        let (output, _) = self.niri.output_under(location).unwrap();
+                        let output = output.clone();
 
                         // See if we got a double move-click gesture.
                         // FIXME: deduplicate with move_request in xdg-shell somehow.
@@ -1368,7 +1369,7 @@ impl State {
                         if self
                             .niri
                             .layout
-                            .interactive_move_begin(window.clone(), pos_within_output)
+                            .interactive_move_begin(window.clone(), output, location)
                         {
                             let start_data = PointerGrabStartData {
                                 focus: None,

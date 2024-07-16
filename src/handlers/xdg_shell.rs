@@ -80,11 +80,12 @@ impl XdgShellHandler for State {
             return;
         }
 
-        let Some((mapped, _)) = self.niri.layout.find_window_and_output(wl_surface) else {
+        let Some((mapped, output)) = self.niri.layout.find_window_and_output(wl_surface) else {
             return;
         };
 
         let window = mapped.window.clone();
+        let output = output.clone();
 
         // See if we got a double move-click gesture.
         let time = get_monotonic_time();
@@ -110,7 +111,7 @@ impl XdgShellHandler for State {
         if !self
             .niri
             .layout
-            .interactive_move_begin(window, grab.start_data().location)
+            .interactive_move_begin(window, output, grab.start_data().location)
         {
             return;
         }

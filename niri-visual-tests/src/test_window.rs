@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use std::rc::Rc;
 
 use niri::layout::{
-    InteractiveMoveData, InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot
+    InteractiveResizeData, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot,
 };
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -238,14 +238,6 @@ impl LayoutElement for TestWindow {
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
         None
-    }
-
-    fn set_in_interactive_move(&mut self) {}
-
-    fn cancel_interactive_move(&mut self) {}
-
-    fn is_in_interactive_move(&self) -> bool {
-        false
     }
 
     fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}

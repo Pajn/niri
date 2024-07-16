@@ -27,8 +27,6 @@ impl MoveGrab {
             .niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::default_named());
-        // FIXME: granular.
-        state.niri.queue_redraw_all();
     }
 }
 
@@ -45,10 +43,12 @@ impl PointerGrab<State> for MoveGrab {
 
         if self.window.alive() {
             let delta = event.location - self.start_data.location;
+            let (output, _) = data.niri.output_under(event.location).unwrap();
+            let output = output.clone();
             let ongoing = data
                 .niri
                 .layout
-                .interactive_move_update(&self.window, delta);
+                .interactive_move_update(&self.window, output, delta);
             if ongoing {
                 return;
             }

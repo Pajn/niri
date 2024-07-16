@@ -15,7 +15,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::tile::{Tile, TileRenderElement};
-use super::{InteractiveMoveData, InteractiveResizeData, LayoutElement, Options};
+use super::{InteractiveResizeData, LayoutElement, Options};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -71,9 +71,6 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Index of the currently active column, if any.
     pub active_column_idx: usize,
-
-    /// Ongoing interactive move.
-    interactive_move: Option<InteractiveMove<W>>,
 
     /// Ongoing interactive resize.
     interactive_resize: Option<InteractiveResize<W>>,
@@ -162,13 +159,6 @@ struct ViewGesture {
     static_view_offset: f64,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
-}
-
-#[derive(Debug)]
-struct InteractiveMove<W: LayoutElement> {
-    window: W::Id,
-    original_window_loc: Point<f64, Logical>,
-    data: InteractiveMoveData,
 }
 
 #[derive(Debug)]
@@ -266,9 +256,6 @@ struct TileData {
     /// Cached actual size of the tile.
     size: Size<f64, Logical>,
 
-    /// Cached whether the tile is being interactively moved
-    interactively_moving: bool,
-
     /// Cached whether the tile is being interactively resized by its left edge.
     interactively_resizing_by_left_edge: bool,
 }
@@ -330,7 +317,6 @@ impl TileData {
         let mut rv = Self {
             height,
             size: Size::default(),
-            interactively_moving: false,
             interactively_resizing_by_left_edge: false,
         };
         rv.update(tile);
@@ -339,7 +325,6 @@ impl TileData {
 
     pub fn update<W: LayoutElement>(&mut self, tile: &Tile<W>) {
         self.size = tile.tile_size();
-        self.interactively_moving = tile.window().is_in_interactive_move();
         self.interactively_resizing_by_left_edge = tile
             .window()
             .interactive_resize_data()
@@ -379,7 +364,6 @@ impl<W: LayoutElement> Workspace<W> {
             columns: vec![],
             data: vec![],
             active_column_idx: 0,
-            interactive_move: None,
             interactive_resize: None,
             view_offset: 0.,
             view_offset_adj: None,
@@ -418,7 +402,6 @@ impl<W: LayoutElement> Workspace<W> {
             columns: vec![],
             data: vec![],
             active_column_idx: 0,
-            interactive_move: None,
             interactive_resize: None,
             view_offset: 0.,
             view_offset_adj: None,
@@ -900,6 +883,45 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
+    pub fn add_window_next_to(
+        &mut self,
+        window: W,
+        target_window: &W::Id,
+        direction: &ResizeEdge,
+        activate: bool,
+        width: ColumnWidth,
+        is_full_width: bool,
+    ) {
+        let mut target_column_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(target_window))
+            .unwrap();
+        if direction.contains(ResizeEdge::LEFT) || direction.contains(ResizeEdge::RIGHT) {
+            if direction.contains(ResizeEdge::RIGHT) {
+                target_column_idx += 1;
+            }
+            self.add_window_at(target_column_idx, window, activate, width, is_full_width);
+        } else if direction.contains(ResizeEdge::TOP) || direction.contains(ResizeEdge::BOTTOM) {
+            let mut target_window_idx = self.columns[target_column_idx]
+                .tiles
+                .iter()
+                .position(|tile| tile.window().id() == target_window)
+                .unwrap();
+            if direction.contains(ResizeEdge::BOTTOM) {
+                target_window_idx += 1;
+            }
+            self.enter_output_for_window(&window);
+
+            let tile = Tile::new(window, self.scale.fractional_scale(), self.options.clone());
+            let target_column = &mut self.columns[target_column_idx];
+            target_column.add_tile_at(target_window_idx, tile, true);
+            self.data[target_column_idx].update(target_column);
+        } else {
+            self.add_window_at(target_column_idx, window, activate, width, is_full_width);
+        }
+    }
+
     pub fn add_window_at(
         &mut self,
         col_idx: usize,
@@ -1127,13 +1149,6 @@ impl<W: LayoutElement> Workspace<W> {
             tile.window().output_leave(output);
         }
 
-        // Stop interactive move.
-        if let Some(move_) = &self.interactive_move {
-            if tile.window().id() == &move_.window {
-                self.interactive_move = None;
-            }
-        }
-
         // Stop interactive resize.
         if let Some(resize) = &self.interactive_resize {
             if tile.window().id() == &resize.window {
@@ -1302,16 +1317,25 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn remove_window(&mut self, window: &W::Id) -> W {
+        self.remove_window_with_col_info(window).2
+    }
+
+    pub fn remove_window_with_col_info(&mut self, window: &W::Id) -> (ColumnWidth, bool, W) {
         let column_idx = self
             .columns
             .iter()
             .position(|col| col.contains(window))
             .unwrap();
         let column = &self.columns[column_idx];
+        let width = column.width;
+        let is_full_width = column.is_full_width;
 
         let window_idx = column.position(window).unwrap();
-        self.remove_tile_by_idx(column_idx, window_idx, None)
-            .into_window()
+        let window = self
+            .remove_tile_by_idx(column_idx, window_idx, None)
+            .into_window();
+
+        (width, is_full_width, window)
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
@@ -1604,16 +1628,6 @@ impl<W: LayoutElement> Workspace<W> {
                 assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
                 assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
             }
-        }
-
-        if let Some(move_) = &self.interactive_move {
-            assert!(
-                self.columns
-                    .iter()
-                    .flat_map(|col| &col.tiles)
-                    .any(|tile| tile.window().id() == &move_.window),
-                "interactive move window must be present on the workspace"
-            );
         }
 
         if let Some(resize) = &self.interactive_resize {
@@ -2034,22 +2048,6 @@ impl<W: LayoutElement> Workspace<W> {
             _ => self.view_offset,
         }
     }
-    fn find_window_idx(&self, window: &W::Id) -> (usize, usize) {
-        let (col_idx, col) = self
-            .columns
-            .iter()
-            .enumerate()
-            .find(|(_, col)| col.contains(window))
-            .unwrap();
-
-        let window_idx = col
-            .tiles
-            .iter()
-            .position(|tile| tile.window().id() == window)
-            .unwrap();
-
-        (col_idx, window_idx)
-    }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
@@ -2197,10 +2195,6 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
-        self.tile_edges_under(pos).map(|(_, edges)| edges)
-    }
-
-    pub fn tile_edges_under(&self, pos: Point<f64, Logical>) -> Option<(&Tile<W>, ResizeEdge)> {
         if self.columns.is_empty() {
             return None;
         }
@@ -2227,7 +2221,7 @@ impl<W: LayoutElement> Workspace<W> {
                     } else if 2. * size.h / 3. < pos_within_tile.y {
                         edges |= ResizeEdge::BOTTOM;
                     }
-                    return Some((tile, edges));
+                    return Some(edges);
                 }
 
                 None
@@ -2407,16 +2401,10 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         let mut first = true;
-        for (tile, mut tile_pos) in self.tiles_with_render_positions() {
+        for (tile, tile_pos) in self.tiles_with_render_positions() {
             // For the active tile (which comes first), draw the focus ring.
             let focus_ring = first;
             first = false;
-
-            if let Some(move_) = &self.interactive_move {
-                if tile.window().id() == &move_.window {
-                    tile_pos += move_.data.offset;
-                }
-            }
 
             rv.extend(
                 tile.render(renderer, tile_pos, output_scale, focus_ring, target)
@@ -2655,162 +2643,6 @@ impl<W: LayoutElement> Workspace<W> {
         self.animate_view_offset_to_column(self.view_pos(), new_col_idx, None);
 
         true
-    }
-
-    pub fn interactive_move_begin(&mut self, window: W::Id, point: Point<f64, Logical>) -> bool {
-        let col_idx = self
-            .columns
-            .iter()
-            .position(|col| col.contains(&window))
-            .unwrap();
-        let col = &mut self.columns[col_idx];
-
-        if col.is_fullscreen {
-            return false;
-        }
-
-        let window_idx = col
-            .tiles
-            .iter()
-            .position(|tile| tile.window().id() == &window)
-            .unwrap();
-
-        // Animate movement of other tiles.
-        // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
-        // than the others.
-        let offset_y = col.tile_offset(window_idx + 1).y - col.tile_offset(window_idx).y;
-        for tile in &mut col.tiles[window_idx + 1..] {
-            tile.animate_move_y_from(offset_y);
-        }
-
-        let column_width = col.width();
-        let tile = &mut col.tiles[window_idx];
-        let original_window_loc = tile.window_loc();
-
-        let move_ = InteractiveMove {
-            window,
-            original_window_loc,
-            data: InteractiveMoveData {
-                pointer_location: point,
-                offset: Point::from((0., 0.)),
-            },
-        };
-
-        tile.window_mut().set_in_interactive_move();
-        self.interactive_move = Some(move_);
-        col.update_tile_sizes(true);
-        self.data[col_idx].update(col);
-
-        // Stop ongoing animation.
-        self.view_offset_adj = None;
-
-        if col.width() == 0. {
-            // Animate movement of other columns.
-            let config = self.options.animations.window_movement.0;
-            if self.active_column_idx <= col_idx {
-                for col in &mut self.columns[col_idx + 1..] {
-                    col.animate_move_from_with_config(column_width, config);
-                }
-            } else {
-                for col in &mut self.columns[..col_idx] {
-                    col.animate_move_from_with_config(-column_width, config);
-                }
-            }
-        }
-
-        true
-    }
-
-    pub fn interactive_move_update(&mut self, window: &W::Id, delta: Point<f64, Logical>) -> bool {
-        let Some(ref mut move_) = &mut self.interactive_move else {
-            return false;
-        };
-
-        if window != &move_.window {
-            return false;
-        }
-
-        move_.data.offset = delta;
-
-        true
-    }
-
-    pub fn interactive_move_end(&mut self, window: Option<&W::Id>) {
-        let Some(move_) = &self.interactive_move else {
-            return;
-        };
-
-        if let Some(window) = window {
-            if window != &move_.window {
-                return;
-            }
-
-            let (column_idx, window_idx) = self.find_window_idx(&move_.window);
-
-            let mut did_move = false;
-            if let Some((target_tile, edges)) =
-                self.tile_edges_under(move_.data.pointer_location + move_.data.offset)
-            {
-                let column = &self.columns[column_idx];
-                let mut target_column_idx = self
-                    .columns
-                    .iter()
-                    .position(|col| col.contains(target_tile.window().id()))
-                    .unwrap();
-                let is_original_column = column_idx == target_column_idx;
-                if target_column_idx > column_idx && column.tiles.len() == 1 {
-                    target_column_idx -= 1;
-                }
-                if edges.contains(ResizeEdge::LEFT) || edges.contains(ResizeEdge::RIGHT) {
-                    let width = column.width;
-                    let is_full_width = column.is_full_width;
-                    if edges.contains(ResizeEdge::RIGHT) {
-                        target_column_idx += 1;
-                    }
-
-                    let mut tile = self.remove_tile_by_idx(column_idx, window_idx, None);
-                    tile.window_mut().cancel_interactive_move();
-                    self.add_tile_at(
-                        target_column_idx,
-                        tile,
-                        true,
-                        width,
-                        is_full_width,
-                        Some(self.options.animations.window_movement.0),
-                    );
-                    did_move = true;
-                } else if edges.contains(ResizeEdge::TOP) || edges.contains(ResizeEdge::BOTTOM) {
-                    let mut target_window_idx = self.columns[target_column_idx]
-                        .tiles
-                        .iter()
-                        .position(|tile| tile.window().id() == target_tile.window().id())
-                        .unwrap();
-                    if is_original_column && target_window_idx > window_idx {
-                        target_window_idx -= 1;
-                    }
-                    if edges.contains(ResizeEdge::BOTTOM) {
-                        target_window_idx += 1;
-                    }
-                    let mut tile = self.remove_tile_by_idx(column_idx, window_idx, None);
-                    tile.window_mut().cancel_interactive_move();
-                    self.enter_output_for_window(tile.window());
-
-                    let target_column = &mut self.columns[target_column_idx];
-                    target_column.add_tile_at(target_window_idx, tile, true);
-                    self.data[target_column_idx].update(target_column);
-                    did_move = true;
-                }
-            }
-            if !did_move {
-                let column = &mut self.columns[column_idx];
-                let tile = &mut column.tiles[window_idx];
-                tile.window_mut().cancel_interactive_move();
-                column.update_tile_sizes(true);
-                self.data[column_idx].update(column);
-            }
-        }
-
-        self.interactive_move = None;
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
@@ -3089,12 +2921,6 @@ impl<W: LayoutElement> Column<W> {
         self.move_animation.is_some() || self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
-    pub fn are_all_tiles_interactively_moving(&self) -> bool {
-        self.tiles
-            .iter()
-            .all(|tile| tile.window().is_in_interactive_move())
-    }
-
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
@@ -3242,10 +3068,7 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let width = width.resolve(&self.options, self.working_area.size.w);
-        let mut width = f64::max(f64::min(width, max_width), min_width);
-        if self.are_all_tiles_interactively_moving() {
-            width = 0.;
-        }
+        let width = f64::max(f64::min(width, max_width), min_width);
 
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
@@ -3260,9 +3083,7 @@ impl<W: LayoutElement> Column<W> {
         let mut auto_tiles_left = self.tiles.len();
 
         // Subtract all fixed-height tiles.
-        for ((h, tile), (min_size, max_size)) in
-            zip(zip(&mut heights, &self.tiles), zip(&min_size, &max_size))
-        {
+        for (h, (min_size, max_size)) in zip(&mut heights, zip(&min_size, &max_size)) {
             // Check if the tile has an exact height constraint.
             if min_size.h > 0. && min_size.h == max_size.h {
                 *h = WindowHeight::Fixed(min_size.h);
@@ -3276,9 +3097,7 @@ impl<W: LayoutElement> Column<W> {
                     *h = f64::max(*h, min_size.h);
                 }
 
-                if !tile.window().is_in_interactive_move() {
-                    height_left -= *h + self.options.gaps;
-                }
+                height_left -= *h + self.options.gaps;
                 auto_tiles_left -= 1;
             }
         }
@@ -3355,9 +3174,6 @@ impl<W: LayoutElement> Column<W> {
             let WindowHeight::Fixed(height) = h else {
                 unreachable!()
             };
-            if tile.window().is_in_interactive_move() {
-                continue;
-            }
 
             let size = Size::from((width, height));
             tile.request_tile_size(size, animate);
@@ -3365,9 +3181,6 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn width(&self) -> f64 {
-        if self.are_all_tiles_interactively_moving() {
-            return 0.;
-        }
         self.data
             .iter()
             .map(|data| NotNan::new(data.size.w).unwrap())
@@ -3640,7 +3453,6 @@ impl<W: LayoutElement> Column<W> {
         let dummy = TileData {
             height: WindowHeight::Auto,
             size: Size::default(),
-            interactively_moving: false,
             interactively_resizing_by_left_edge: false,
         };
         let data = data.chain(iter::once(dummy));
@@ -3648,9 +3460,6 @@ impl<W: LayoutElement> Column<W> {
         data.map(move |data| {
             let mut pos = Point::from((0., y));
 
-            if data.interactively_moving {
-                return pos;
-            };
             if center {
                 pos.x = (col_width - data.size.w) / 2.;
             } else if data.interactively_resizing_by_left_edge {
