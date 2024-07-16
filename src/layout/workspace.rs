@@ -1317,10 +1317,13 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn remove_window(&mut self, window: &W::Id) -> W {
-        self.remove_window_with_col_info(window).2
+        self.remove_window_with_col_info(window).3
     }
 
-    pub fn remove_window_with_col_info(&mut self, window: &W::Id) -> (ColumnWidth, bool, W) {
+    pub fn remove_window_with_col_info(
+        &mut self,
+        window: &W::Id,
+    ) -> (Point<f64, Logical>, ColumnWidth, bool, W) {
         let column_idx = self
             .columns
             .iter()
@@ -1331,11 +1334,15 @@ impl<W: LayoutElement> Workspace<W> {
         let is_full_width = column.is_full_width;
 
         let window_idx = column.position(window).unwrap();
+        let (_, render_pos) = self
+            .tiles_with_render_positions()
+            .find(|(tile, _)| tile.window().id() == window)
+            .unwrap();
         let window = self
             .remove_tile_by_idx(column_idx, window_idx, None)
             .into_window();
 
-        (width, is_full_width, window)
+        (render_pos, width, is_full_width, window)
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {

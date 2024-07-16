@@ -81,8 +81,9 @@ pub struct InteractiveMoveData<W: LayoutElement> {
     pub output: Output,
     pub width: ColumnWidth,
     pub is_full_width: bool,
-    pub pointer_location: Point<f64, Logical>,
-    pub offset: Point<f64, Logical>,
+    pub initial_pointer_location: Point<f64, Logical>,
+    pub pointer_offset: Point<f64, Logical>,
+    pub window_offset: Point<f64, Logical>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2263,7 +2264,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         window: W::Id,
         output: Output,
-        pos_within_output: Point<f64, Logical>,
+        pointer_location: Point<f64, Logical>,
     ) -> bool {
         let window = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors
@@ -2279,7 +2280,7 @@ impl<W: LayoutElement> Layout<W> {
                 .next(),
         };
 
-        let Some((width, is_full_width, window)) = window else {
+        let Some((render_pos, width, is_full_width, window)) = window else {
             return false;
         };
 
@@ -2291,8 +2292,9 @@ impl<W: LayoutElement> Layout<W> {
             output,
             width,
             is_full_width,
-            pointer_location: pos_within_output,
-            offset: Point::from((0., 0.)),
+            initial_pointer_location: pointer_location,
+            pointer_offset: Point::from((0., 0.)),
+            window_offset: render_pos - pointer_location,
         });
 
         true
@@ -2301,9 +2303,12 @@ impl<W: LayoutElement> Layout<W> {
     pub fn interactive_move_update(
         &mut self,
         window: &W::Id,
-        output: Output,
+        output: Option<Output>,
         delta: Point<f64, Logical>,
     ) -> bool {
+        let Some(output) = output else {
+            return false;
+        };
         let Some(ref mut move_) = &mut self.interactive_move else {
             return false;
         };
@@ -2321,7 +2326,7 @@ impl<W: LayoutElement> Layout<W> {
             move_.output = output.clone()
         }
 
-        move_.offset = delta;
+        move_.pointer_offset = delta;
 
         true
     }
@@ -2349,7 +2354,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let move_ = self.interactive_move.take().unwrap();
         let target = workspace
-            .window_edges_under(move_.pointer_location + move_.offset)
+            .window_edges_under(move_.initial_pointer_location + move_.pointer_offset)
             .map(|(target_window, edges)| (target_window.id().clone(), edges));
 
         if let Some((target_window_id, edges)) = target {
@@ -2561,6 +2566,52 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    pub fn render_elements<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+    ) -> Vec<LayoutElementRenderElement<R>> {
+        let mut rv = vec![];
+
+        if let Some(ref move_) = self.interactive_move {
+            // let _span = tracy_client::span!("Tile::render_inner");
+
+            let alpha = move_.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+
+            let scale = move_.output.current_scale().fractional_scale();
+            let scale_2 = Scale::from(scale);
+            let window_render_loc =
+                move_.initial_pointer_location + move_.pointer_offset + move_.window_offset;
+
+            let window = move_
+                .window
+                .render(renderer, window_render_loc, scale_2, alpha, target);
+
+            let window_surface = Some(window.normal.into_iter().map(move |elem| match elem {
+                LayoutElementRenderElement::Wayland(elem) => {
+                    // If we should clip to geometry, render a clipped window.
+                    // Otherwise, render it normally.
+                    LayoutElementRenderElement::Wayland(elem)
+                }
+                LayoutElementRenderElement::SolidColor(elem) => {
+                    // Otherwise, render the solid color as is.
+                    LayoutElementRenderElement::SolidColor(elem)
+                }
+            }));
+
+            let window_popups = Some(window.popups.into_iter().map(Into::into));
+
+            rv.extend(
+                window_popups
+                    .into_iter()
+                    .flatten()
+                    .chain(window_surface.into_iter().flatten()),
+            );
+        }
+
+        rv
     }
 
     pub fn refresh(&mut self) {
@@ -2854,7 +2905,7 @@ mod tests {
     }
 
     fn arbitrary_move_point() -> impl Strategy<Value = Point<f64, Logical>> {
-        any::<(f64, f64)>().prop_map(|(x, y)| Point::from((x.into(), y.into())))
+        any::<(f64, f64)>().prop_map(|(x, y)| Point::from((x, y)))
     }
 
     fn arbitrary_resize_edge() -> impl Strategy<Value = ResizeEdge> {

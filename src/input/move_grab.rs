@@ -43,8 +43,7 @@ impl PointerGrab<State> for MoveGrab {
 
         if self.window.alive() {
             let delta = event.location - self.start_data.location;
-            let (output, _) = data.niri.output_under(event.location).unwrap();
-            let output = output.clone();
+            let output = data.niri.output_under(event.location).map(|(output, _)| output).cloned();
             let ongoing = data
                 .niri
                 .layout

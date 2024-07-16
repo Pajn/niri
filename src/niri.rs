@@ -111,7 +111,7 @@ use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
-use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
@@ -2887,6 +2887,7 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements = mon.render_elements(renderer, target);
+        let floating_elements = self.layout.render_elements(renderer, target);
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
@@ -2919,8 +2920,18 @@ impl Niri {
         if mon.render_above_top_layer() {
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
             extend_from_layer(&mut elements, Layer::Top);
+            elements.extend(
+                floating_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         } else {
             extend_from_layer(&mut elements, Layer::Top);
+            elements.extend(
+                floating_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
         }
 
@@ -4412,6 +4423,7 @@ impl ClientData for ClientState {
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
+        LayoutElement = LayoutElementRenderElement<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
