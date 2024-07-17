@@ -2887,7 +2887,9 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements = mon.render_elements(renderer, target);
-        let floating_elements = self.layout.render_elements_for_output(renderer, target, output);
+        let floating_elements = self
+            .layout
+            .render_elements_for_output(renderer, target, output);
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);

@@ -743,6 +743,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn remove_window(&mut self, window: &W::Id) -> Option<W> {
+        // TODO: moving window
         let mut rv = None;
 
         match &mut self.monitor_set {
@@ -791,6 +792,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
+        // TODO: moving window
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -814,6 +816,11 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn find_window_and_output(&self, wl_surface: &WlSurface) -> Option<(&W, &Output)> {
+        if let Some(move_) = &self.interactive_move {
+            if move_.window.is_wl_surface(wl_surface) {
+                return Some((&move_.window, &move_.output));
+            }
+        }
         if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
             for mon in monitors {
                 for ws in &mon.workspaces {
@@ -893,6 +900,11 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         wl_surface: &WlSurface,
     ) -> Option<(&mut W, Option<&Output>)> {
+        if let Some(move_) = &mut self.interactive_move {
+            if move_.window.is_wl_surface(wl_surface) {
+                return Some((&mut move_.window, Some(&move_.output)));
+            }
+        }
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -916,6 +928,12 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn window_loc(&self, window: &W::Id) -> Option<Point<f64, Logical>> {
+        if let Some(move_) = &self.interactive_move {
+            if move_.window.id() == window {
+                // TODO: correct?
+                return Some(Point::from((0., 0.)));
+            }
+        }
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -982,6 +1000,9 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn activate_window(&mut self, window: &W::Id) {
+        if self.interactive_move.is_some() {
+            return;
+        }
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1057,6 +1078,9 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn active_window(&self) -> Option<(&W, &Output)> {
+        if let Some(move_) = &self.interactive_move {
+            return Some((&move_.window, &move_.output));
+        }
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1078,6 +1102,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn windows_for_output(&self, output: &Output) -> impl Iterator<Item = &W> + '_ {
+        // TODO: Moved window
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             panic!()
         };
@@ -1087,6 +1112,9 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>)) {
+        if let Some(move_) = &self.interactive_move {
+            f(&move_.window, Some(&move_.output));
+        }
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1108,6 +1136,9 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn with_windows_mut(&mut self, mut f: impl FnMut(&mut W, Option<&Output>)) {
+        if let Some(move_) = &mut self.interactive_move {
+            f(&mut move_.window, Some(&move_.output));
+        }
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1575,6 +1606,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus(&self) -> Option<&W> {
+        if let Some(move_) = &self.interactive_move {
+            return Some(&move_.window);
+        }
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1599,6 +1634,9 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
+        if self.interactive_move.is_some() {
+            return None;
+        };
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
@@ -1817,7 +1855,9 @@ impl<W: LayoutElement> Layout<W> {
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
             if mon.output == *output {
-                mon.update_render_elements(idx == *active_monitor_idx);
+                mon.update_render_elements(
+                    self.interactive_move.is_none() && idx == *active_monitor_idx,
+                );
                 return;
             }
         }
@@ -2343,7 +2383,8 @@ impl<W: LayoutElement> Layout<W> {
             move_
                 .window
                 .set_preferred_scale_transform(output.current_scale(), output.current_transform());
-            move_.output = output.clone()
+            move_.output = output.clone();
+            self.focus_output(&output);
         }
 
         if let Some(workspace) = self.workspace_for_output_mut(&output) {
@@ -2530,6 +2571,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
+        // TODO: moving window
         let _span = tracy_client::span!("Layout::store_unmap_snapshot");
 
         match &mut self.monitor_set {
@@ -2555,6 +2597,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
+        // TODO: moving window
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -2582,6 +2625,7 @@ impl<W: LayoutElement> Layout<W> {
         renderer: &mut GlesRenderer,
         window: &W::Id,
     ) {
+        // TODO: moving window
         let _span = tracy_client::span!("Layout::start_close_animation_for_window");
 
         match &mut self.monitor_set {
@@ -2655,6 +2699,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn refresh(&mut self) {
+        // TODO: moving window
         let _span = tracy_client::span!("Layout::refresh");
 
         match &mut self.monitor_set {
@@ -2664,7 +2709,7 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
-                    let is_active = idx == *active_monitor_idx;
+                    let is_active = idx == *active_monitor_idx && self.interactive_move.is_none();
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 
