@@ -2286,6 +2286,7 @@ impl<W: LayoutElement> Layout<W> {
 
         window.output_enter(&output);
         window.set_preferred_scale_transform(output.current_scale(), output.current_transform());
+        let pos_within_output = pointer_location - output.current_location().to_f64();
 
         self.interactive_move = Some(InteractiveMoveData {
             window,
@@ -2294,7 +2295,7 @@ impl<W: LayoutElement> Layout<W> {
             is_full_width,
             initial_pointer_location: pointer_location,
             pointer_offset: Point::from((0., 0.)),
-            window_offset: render_pos - pointer_location,
+            window_offset: render_pos - pos_within_output,
         });
 
         true
@@ -2345,7 +2346,17 @@ impl<W: LayoutElement> Layout<W> {
                 ref mut monitors,
                 active_monitor_idx,
                 ..
-            } => Some(monitors[active_monitor_idx].active_workspace()),
+            } => {
+                let workspace = monitors
+                    .iter_mut()
+                    .find(|monitor| monitor.output == move_.output)
+                    .map(|monitor| monitor.active_workspace());
+                if workspace.is_some() {
+                    workspace
+                } else {
+                    Some(monitors[active_monitor_idx].active_workspace())
+                }
+            }
             MonitorSet::NoOutputs {
                 ref mut workspaces, ..
             } => workspaces.first_mut(),
@@ -2353,8 +2364,10 @@ impl<W: LayoutElement> Layout<W> {
         .unwrap();
 
         let move_ = self.interactive_move.take().unwrap();
+        let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
+            - move_.output.current_location().to_f64();
         let target = workspace
-            .window_edges_under(move_.initial_pointer_location + move_.pointer_offset)
+            .window_edges_under(pos_within_output)
             .map(|(target_window, edges)| (target_window.id().clone(), edges));
 
         if let Some((target_window_id, edges)) = target {
@@ -2568,47 +2581,49 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn render_elements<R: NiriRenderer>(
+    pub fn render_elements_for_output<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
+        output: &Output,
     ) -> Vec<LayoutElementRenderElement<R>> {
         let mut rv = vec![];
 
         if let Some(ref move_) = self.interactive_move {
-            // let _span = tracy_client::span!("Tile::render_inner");
+            if &move_.output == output {
+                // let _span = tracy_client::span!("Tile::render_inner");
 
-            let alpha = move_.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+                let alpha = move_.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
 
-            let scale = move_.output.current_scale().fractional_scale();
-            let scale_2 = Scale::from(scale);
-            let window_render_loc =
-                move_.initial_pointer_location + move_.pointer_offset + move_.window_offset;
+                let scale = move_.output.current_scale().fractional_scale();
+                let scale_2 = Scale::from(scale);
+                let window_render_loc =
+                    move_.initial_pointer_location + move_.pointer_offset + move_.window_offset
+                        - output.current_location().to_f64();
 
-            let window = move_
-                .window
-                .render(renderer, window_render_loc, scale_2, alpha, target);
+                let window =
+                    move_
+                        .window
+                        .render(renderer, window_render_loc, scale_2, alpha, target);
 
-            let window_surface = Some(window.normal.into_iter().map(move |elem| match elem {
-                LayoutElementRenderElement::Wayland(elem) => {
-                    // If we should clip to geometry, render a clipped window.
-                    // Otherwise, render it normally.
-                    LayoutElementRenderElement::Wayland(elem)
-                }
-                LayoutElementRenderElement::SolidColor(elem) => {
-                    // Otherwise, render the solid color as is.
-                    LayoutElementRenderElement::SolidColor(elem)
-                }
-            }));
+                let window_surface = Some(window.normal.into_iter().map(move |elem| match elem {
+                    LayoutElementRenderElement::Wayland(elem) => {
+                        LayoutElementRenderElement::Wayland(elem)
+                    }
+                    LayoutElementRenderElement::SolidColor(elem) => {
+                        LayoutElementRenderElement::SolidColor(elem)
+                    }
+                }));
 
-            let window_popups = Some(window.popups.into_iter().map(Into::into));
+                let window_popups = Some(window.popups.into_iter().map(Into::into));
 
-            rv.extend(
-                window_popups
-                    .into_iter()
-                    .flatten()
-                    .chain(window_surface.into_iter().flatten()),
-            );
+                rv.extend(
+                    window_popups
+                        .into_iter()
+                        .flatten()
+                        .chain(window_surface.into_iter().flatten()),
+                );
+            }
         }
 
         rv
@@ -3069,12 +3084,16 @@ mod tests {
         InteractiveMoveBegin {
             #[proptest(strategy = "1..=5usize")]
             window: usize,
+            #[proptest(strategy = "1..=5usize")]
+            output_idx: usize,
             #[proptest(strategy = "arbitrary_move_point()")]
             point: Point<f64, Logical>,
         },
         InteractiveMoveUpdate {
             #[proptest(strategy = "1..=5usize")]
             window: usize,
+            #[proptest(strategy = "1..=5usize")]
+            output_idx: usize,
             #[proptest(strategy = "-20000f64..20000f64")]
             dx: f64,
             #[proptest(strategy = "-20000f64..20000f64")]
@@ -3534,18 +3553,24 @@ mod tests {
                 }
                 Op::InteractiveMoveBegin {
                     window,
-                    // output,
+                    output_idx,
                     point,
                 } => {
-                    // layout.interactive_move_begin(window, output, point);
+                    let name = format!("output{output_idx}");
+                    let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                        return;
+                    };
+                    layout.interactive_move_begin(window, output, point);
                 }
                 Op::InteractiveMoveUpdate {
                     window,
-                    // output,
+                    output_idx,
                     dx,
                     dy,
                 } => {
-                    // layout.interactive_move_update(&window, output, Point::from((dx, dy)));
+                    let name = format!("output{output_idx}");
+                    let output = layout.outputs().find(|o| o.name() == name).cloned();
+                    layout.interactive_move_update(&window, output, Point::from((dx, dy)));
                 }
                 Op::InteractiveMoveEnd { window } => {
                     layout.interactive_move_end(&window);
