@@ -942,6 +942,13 @@ impl<W: LayoutElement> Workspace<W> {
 
             self.data[target_column_idx].update(target_column);
 
+            if activate {
+                target_column.active_tile_idx = target_window_idx;
+                if self.active_column_idx != target_column_idx {
+                    self.activate_column(target_column_idx);
+                }
+            }
+
             // Consuming a window into a column could've increased its width if the new window had a
             // larger min width. Move the next columns to account for this.
             let offset_next = prev_next_x - self.column_x(self.active_column_idx + 1);
