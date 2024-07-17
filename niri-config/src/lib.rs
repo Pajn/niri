@@ -357,6 +357,8 @@ pub struct Layout {
     pub focus_ring: FocusRing,
     #[knuffel(child, default)]
     pub border: Border,
+    #[knuffel(child, default)]
+    pub insert_hint: InsertHint,
     #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetWidth>,
     #[knuffel(child)]
@@ -374,6 +376,7 @@ impl Default for Layout {
         Self {
             focus_ring: Default::default(),
             border: Default::default(),
+            insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
@@ -488,6 +491,23 @@ impl From<FocusRing> for Border {
             inactive_color: value.inactive_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct InsertHint {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, default = Self::default().color)]
+    pub color: Color,
+}
+
+impl Default for InsertHint {
+    fn default() -> Self {
+        Self {
+            off: false,
+            color: Color::new(127, 200, 255, 128),
         }
     }
 }
@@ -2808,6 +2828,15 @@ mod tests {
                         },
                         active_gradient: None,
                         inactive_gradient: None,
+                    },
+                    insert_hint: InsertHint {
+                        off: false,
+                        color: Color {
+                            r: 255,
+                            g: 200,
+                            b: 127,
+                            a: 255,
+                        },
                     },
                     preset_column_widths: vec![
                         PresetWidth::Proportion(0.25),

@@ -45,7 +45,8 @@ use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
-use self::workspace::{compute_working_area, Column, ColumnWidth, OutputId, Workspace};
+use self::workspace::{compute_working_area, Column, ColumnWidth, InsertHint, OutputId, Workspace};
+use crate::layout::workspace::InsertPosition;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -226,6 +227,7 @@ pub struct Options {
     pub struts: Struts,
     pub focus_ring: niri_config::FocusRing,
     pub border: niri_config::Border,
+    pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
     /// Column widths that `toggle_width()` switches between.
     pub preset_widths: Vec<ColumnWidth>,
@@ -241,6 +243,7 @@ impl Default for Options {
             struts: Default::default(),
             focus_ring: Default::default(),
             border: Default::default(),
+            insert_hint: Default::default(),
             center_focused_column: Default::default(),
             preset_widths: vec![
                 ColumnWidth::Proportion(1. / 3.),
@@ -281,6 +284,7 @@ impl Options {
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
+            insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
             preset_widths,
             default_width,
@@ -1170,6 +1174,18 @@ impl<W: LayoutElement> Layout<W> {
                     .map_or(false, |name| name.eq_ignore_ascii_case(workspace_name))
             })
         })
+    }
+
+    fn workspace_for_output_mut(&mut self, output: &Output) -> Option<&mut Workspace<W>> {
+        match self.monitor_set {
+            MonitorSet::Normal {
+                ref mut monitors, ..
+            } => monitors
+                .iter_mut()
+                .find(|monitor| monitor.output == *output)
+                .map(|monitor| monitor.active_workspace()),
+            _ => None,
+        }
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
@@ -2310,7 +2326,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(output) = output else {
             return false;
         };
-        let Some(ref mut move_) = &mut self.interactive_move else {
+        let Some(mut move_) = self.interactive_move.take() else {
             return false;
         };
 
@@ -2319,6 +2335,9 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         if output != move_.output {
+            if let Some(workspace) = self.workspace_for_output_mut(&move_.output) {
+                workspace.clear_insert_hint();
+            }
             move_.window.output_leave(&move_.output);
             move_.window.output_enter(&output);
             move_
@@ -2327,7 +2346,19 @@ impl<W: LayoutElement> Layout<W> {
             move_.output = output.clone()
         }
 
+        if let Some(workspace) = self.workspace_for_output_mut(&output) {
+            let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
+                - move_.output.current_location().to_f64();
+            let position = workspace.get_insert_position(pos_within_output);
+            workspace.set_insert_hint(InsertHint {
+                position,
+                width: move_.width,
+                is_full_width: move_.is_full_width,
+            });
+        }
+
         move_.pointer_offset = delta;
+        self.interactive_move = Some(move_);
 
         true
     }
@@ -2366,23 +2397,17 @@ impl<W: LayoutElement> Layout<W> {
         let move_ = self.interactive_move.take().unwrap();
         let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
             - move_.output.current_location().to_f64();
-        let target = workspace
-            .window_edges_under(pos_within_output)
-            .map(|(target_window, edges)| (target_window.id().clone(), edges));
 
-        if let Some((target_window_id, edges)) = target {
-            let width = ColumnWidth::Fixed(move_.window.size().w as f64);
-            workspace.add_window_next_to(
-                move_.window,
-                &target_window_id,
-                &edges,
-                true,
-                width,
-                false,
-            );
-        } else {
-            let width = ColumnWidth::Fixed(move_.window.size().w as f64);
-            workspace.add_window(move_.window, true, width, false);
+        let width = ColumnWidth::Fixed(move_.window.size().w as f64);
+        workspace.clear_insert_hint();
+        let position = workspace.get_insert_position(pos_within_output);
+        match position {
+            InsertPosition::NewColumn(column_idx) => {
+                workspace.add_window_at(column_idx, move_.window, true, width, false)
+            }
+            InsertPosition::InColumn(column_idx, tile_idx) => {
+                workspace.add_window_in_column(column_idx, tile_idx, move_.window, true)
+            }
         }
     }
 
