@@ -2942,7 +2942,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.interactive_resize = None;
     }
 
-    pub fn refresh(&mut self, is_active: bool) {
+    pub fn refresh(&mut self, is_active: bool, is_focusable: bool) {
+        if !is_active {
+            self.clear_insert_hint();
+        }
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             let mut col_resize_data = None;
             if let Some(resize) = &self.interactive_resize {
@@ -2958,7 +2961,7 @@ impl<W: LayoutElement> Workspace<W> {
                 win.set_active_in_column(active_in_column);
 
                 let active = is_active && self.active_column_idx == col_idx && active_in_column;
-                win.set_activated(active);
+                win.set_activated(active && is_focusable);
 
                 win.set_interactive_resize(col_resize_data);
 

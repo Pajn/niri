@@ -2766,9 +2766,12 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 for (idx, mon) in monitors.iter_mut().enumerate() {
-                    let is_active = idx == *active_monitor_idx && self.interactive_move.is_none();
+                    let is_active = idx == *active_monitor_idx;
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                        ws.refresh(is_active);
+                        ws.refresh(
+                            is_active && ws_idx == mon.active_workspace_idx,
+                            self.interactive_move.is_none(),
+                        );
 
                         // Cancel the view offset gesture after workspace switches, moves, etc.
                         if ws_idx != mon.active_workspace_idx {
@@ -2779,7 +2782,7 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    ws.refresh(false);
+                    ws.refresh(false, false);
                     ws.view_offset_gesture_end(false, None);
                 }
             }
