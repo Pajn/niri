@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use smithay::backend::input::ButtonState;
 use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
@@ -12,12 +15,19 @@ use crate::niri::State;
 
 pub struct MoveGrab {
     start_data: PointerGrabStartData<State>,
+    last_location: Point<f64, Logical>,
     window: Window,
+    is_moving: bool,
 }
 
 impl MoveGrab {
     pub fn new(start_data: PointerGrabStartData<State>, window: Window) -> Self {
-        Self { start_data, window }
+        Self {
+            last_location: start_data.location,
+            start_data,
+            window,
+            is_moving: false,
+        }
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
@@ -43,12 +53,24 @@ impl PointerGrab<State> for MoveGrab {
 
         if self.window.alive() {
             let delta = event.location - self.start_data.location;
-            let output = data.niri.output_under(event.location).map(|(output, _)| output).cloned();
+            let output = data
+                .niri
+                .output_under(event.location)
+                .map(|(output, _)| output)
+                .cloned();
             let ongoing = data
                 .niri
                 .layout
                 .interactive_move_update(&self.window, output, delta);
             if ongoing {
+                let event_delta = event.location - self.last_location;
+                self.last_location = event.location;
+                let timestamp = Duration::from_millis(u64::from(event.time));
+                if self.is_moving {
+                    data.niri
+                        .layout
+                        .view_offset_gesture_update(-event_delta.x, timestamp, false);
+                }
                 return;
             }
         }
@@ -75,6 +97,24 @@ impl PointerGrab<State> for MoveGrab {
         event: &ButtonEvent,
     ) {
         handle.button(data, event);
+
+        // MouseButton::Middle
+        if event.button == 0x112 {
+            if event.state == ButtonState::Pressed {
+                let output = data
+                    .niri
+                    .output_under(handle.current_location())
+                    .map(|(output, _)| output)
+                    .cloned();
+                if let Some(output) = output {
+                    self.is_moving = true;
+                    data.niri.layout.view_offset_gesture_begin(&output, false);
+                }
+            } else if event.state == ButtonState::Released {
+                self.is_moving = false;
+                data.niri.layout.view_offset_gesture_end(false, None);
+            }
+        }
 
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.

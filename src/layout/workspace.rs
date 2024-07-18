@@ -907,63 +907,7 @@ impl<W: LayoutElement> Workspace<W> {
         if self.options.insert_hint.off {
             return;
         }
-        let area = self.insert_hint_area(&insert_hint);
-        if Some(&insert_hint) == self.insert_hint.as_ref() {
-            return;
-        }
         self.insert_hint = Some(insert_hint);
-        let Some(area) = area else {
-            return;
-        };
-
-        let view_left = self.view_pos();
-        let view_right = view_left + self.view_size().w;
-        let offset_delta = if area.loc.x < view_left {
-            area.loc.x - view_left
-        } else if area.loc.x + area.size.w > view_right {
-            area.loc.x + area.size.w - view_right
-        } else {
-            return;
-        };
-        let new_view_offset = self.view_offset + offset_delta;
-
-        let pixel = 1. / self.scale.fractional_scale();
-
-        match &mut self.view_offset_adj {
-            // If we're already animating towards that, don't restart it.
-            Some(ViewOffsetAdjustment::Animation(anim)) => {
-                self.view_offset = new_view_offset;
-                // Offset the animation for the active column change.
-                anim.offset(offset_delta);
-
-                let to_diff = new_view_offset - anim.to();
-                if (anim.value() - self.view_offset).abs() < pixel && to_diff.abs() < pixel {
-                    // Correct for any inaccuracy.
-                    anim.offset(to_diff);
-                    return;
-                }
-            }
-            // If another ViewOffsetAdjustment is running, don't overwrite it.
-            Some(_) => return,
-            _ => (),
-        }
-
-        // If our view offset is already this, we don't need to do anything.
-        if (self.view_offset - new_view_offset).abs() < pixel {
-            // Correct for any inaccuracy.
-            self.view_offset = new_view_offset;
-            self.view_offset_adj = None;
-            return;
-        }
-
-        // FIXME: also compute and use current velocity.
-        self.view_offset_adj = Some(ViewOffsetAdjustment::Animation(Animation::new(
-            self.view_offset,
-            new_view_offset,
-            0.,
-            self.options.animations.horizontal_view_movement.0,
-        )));
-        self.view_offset = new_view_offset;
     }
 
     pub fn clear_insert_hint(&mut self) {
@@ -2326,7 +2270,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn insert_hint_area(&self, insert_hint: &InsertHint) -> Option<Rectangle<f64, Logical>> {
-        Some(match insert_hint.position {
+        let mut hint_area = match insert_hint.position {
             InsertPosition::NewColumn(column_index) => {
                 if column_index == 0 || column_index == self.columns.len() {
                     let size = Size::from((
@@ -2356,7 +2300,22 @@ impl<W: LayoutElement> Workspace<W> {
                 ));
                 Rectangle::from_loc_and_size(loc, size)
             }
-        })
+        };
+
+        let view_area =
+            Rectangle::from_loc_and_size(Point::from((self.view_pos(), 0.)), self.view_size());
+
+        // Make sure the hint is at least partially visible.
+        hint_area.loc.x = hint_area
+            .loc
+            .x
+            .max(view_area.loc.x + 150. - hint_area.size.w);
+        hint_area.loc.x = hint_area
+            .loc
+            .x
+            .min(view_area.loc.x + view_area.size.w - 150.);
+
+        Some(hint_area)
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the view.
