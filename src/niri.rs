@@ -111,7 +111,8 @@ use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
-use crate::layout::{Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement};
+use crate::layout::tile::TileRenderElement;
+use crate::layout::{Layout, LayoutElement as _, MonitorRenderElement};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
@@ -4425,7 +4426,7 @@ impl ClientData for ClientState {
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
-        LayoutElement = LayoutElementRenderElement<R>,
+        Tile = TileRenderElement<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
