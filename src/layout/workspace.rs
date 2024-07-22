@@ -2275,19 +2275,22 @@ impl<W: LayoutElement> Workspace<W> {
                 if column_index == 0 || column_index == self.columns.len() {
                     let size = Size::from((
                         insert_hint.width.resolve(&self.options, self.view_size.w),
-                        self.working_area.size.h,
+                        self.working_area.size.h - self.options.gaps * 2.,
                     ));
-                    let mut loc =
-                        Point::from((self.column_x(column_index), self.working_area.loc.y));
-                    if column_index == 0 {
+                    let mut loc = Point::from((
+                        self.column_x(column_index),
+                        self.working_area.loc.y + self.options.gaps,
+                    ));
+                    if column_index == 0 && !self.columns.is_empty() {
                         loc.x -= size.w;
                     }
                     Rectangle::from_loc_and_size(loc, size)
                 } else {
-                    let size = Size::from((300., self.working_area.size.h));
+                    let size =
+                        Size::from((300., self.working_area.size.h - self.options.gaps * 2.));
                     let loc = Point::from((
                         self.column_x(column_index) - size.w / 2.,
-                        self.working_area.loc.y,
+                        self.working_area.loc.y + self.options.gaps,
                     ));
                     Rectangle::from_loc_and_size(loc, size)
                 }
