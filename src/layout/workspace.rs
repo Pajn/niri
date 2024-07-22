@@ -2569,8 +2569,10 @@ impl<W: LayoutElement> Workspace<W> {
             if let Some(mut area) = self.insert_hint_area(insert_hint) {
                 area.loc.x -= self.view_pos();
 
-                let fallback_buffer =
-                    SolidColorBuffer::new(area.size, self.options.insert_hint.color.into());
+                let fallback_buffer = SolidColorBuffer::new(
+                    area.size,
+                    self.options.insert_hint.color.to_array_premul(),
+                );
                 rv.push(
                     TileRenderElement::SolidColor(SolidColorRenderElement::from_buffer(
                         &fallback_buffer,
