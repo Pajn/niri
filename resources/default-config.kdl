@@ -179,8 +179,7 @@ layout {
     }
 
     insert-hint {
-        // Uncomment this line to disable the insert hint.
-        // off
+        off
 
         color "#7fc8ff88"
     }
