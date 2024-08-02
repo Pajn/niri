@@ -197,6 +197,7 @@ pub trait LayoutElement {
 pub struct Layout<W: LayoutElement> {
     /// Monitors and workspaes in the layout.
     monitor_set: MonitorSet<W>,
+    /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveData<W>>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
@@ -836,6 +837,7 @@ impl<W: LayoutElement> Layout<W> {
                 return Some((move_.window.window(), &move_.output));
             }
         }
+
         if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
             for mon in monitors {
                 for ws in &mon.workspaces {
@@ -920,6 +922,7 @@ impl<W: LayoutElement> Layout<W> {
                 return Some((move_.window.window_mut(), Some(&move_.output)));
             }
         }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -948,6 +951,7 @@ impl<W: LayoutElement> Layout<W> {
                 return Some(move_.window.window_loc());
             }
         }
+
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1017,6 +1021,7 @@ impl<W: LayoutElement> Layout<W> {
         if self.interactive_move.is_some() {
             return;
         }
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1095,6 +1100,7 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(move_) = &self.interactive_move {
             return Some((move_.window.window(), &move_.output));
         }
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -1134,6 +1140,7 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(move_) = &self.interactive_move {
             f(move_.window.window(), Some(&move_.output));
         }
+
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1158,6 +1165,7 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(move_) = &mut self.interactive_move {
             f(move_.window.window_mut(), Some(&move_.output));
         }
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
@@ -1656,6 +1664,7 @@ impl<W: LayoutElement> Layout<W> {
         if self.interactive_move.is_some() {
             return None;
         };
+
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
         };
