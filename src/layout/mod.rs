@@ -95,7 +95,7 @@ pub struct InteractiveResizeData {
 
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
-    type Id: Clone + PartialEq + std::fmt::Debug;
+    type Id: PartialEq + std::fmt::Debug;
 
     /// Unique ID of this element.
     fn id(&self) -> &Self::Id;
