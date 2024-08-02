@@ -2640,10 +2640,12 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::store_unmap_snapshot");
 
         if let Some(move_) = &mut self.interactive_move {
-            move_.window.store_unmap_snapshot_if_empty(
-                renderer,
-                move_.output.current_scale().fractional_scale().into(),
-            );
+            if move_.window.window().id() == window {
+                move_.window.store_unmap_snapshot_if_empty(
+                    renderer,
+                    move_.output.current_scale().fractional_scale().into(),
+                );
+            }
         }
 
         match &mut self.monitor_set {
@@ -2670,8 +2672,10 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn clear_unmap_snapshot(&mut self, window: &W::Id) {
         if let Some(move_) = &mut self.interactive_move {
-            let _ = move_.window.take_unmap_snapshot();
-            return;
+            if move_.window.window().id() == window {
+                let _ = move_.window.take_unmap_snapshot();
+                return;
+            }
         }
 
         match &mut self.monitor_set {
