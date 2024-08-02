@@ -1346,7 +1346,7 @@ impl State {
                         let (output, _) = self.niri.output_under(location).unwrap();
                         let output = output.clone();
 
-                        // See if we got a double move-click gesture.
+                        // See and ignore if we got a double move-click gesture.
                         // FIXME: deduplicate with move_request in xdg-shell somehow.
                         let time = get_monotonic_time();
                         let last_cell = mapped.last_interactive_move_start();
@@ -1354,9 +1354,6 @@ impl State {
                         last_cell.set(Some(time));
                         if let Some(last_time) = last {
                             if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
-                                // Allow quick move after a triple click.
-                                last_cell.set(None);
-
                                 self.niri.layout.activate_window(&window);
                                 // FIXME: granular.
                                 self.niri.queue_redraw_all();
