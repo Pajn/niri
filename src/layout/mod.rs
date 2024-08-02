@@ -2729,7 +2729,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn render_elements_for_output<R: NiriRenderer>(
+    pub fn render_floating_for_output<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
