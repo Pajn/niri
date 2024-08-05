@@ -1679,7 +1679,19 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
-        if self.interactive_move.is_some() {
+        if let Some(move_) = &self.interactive_move {
+            let window_render_loc =
+                move_.initial_pointer_location + move_.pointer_offset + move_.window_offset
+                    - output.current_location().to_f64();
+            let pos_within_window = pos_within_output - window_render_loc;
+
+            if move_.window.is_in_input_region(pos_within_window) {
+                let pos_within_surface = window_render_loc + move_.window.buf_loc();
+                return Some((move_.window.window(), Some(pos_within_surface)));
+            } else if move_.window.is_in_activation_region(pos_within_window) {
+                return Some((move_.window.window(), None));
+            }
+
             return None;
         };
 
