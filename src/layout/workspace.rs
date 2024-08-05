@@ -2282,14 +2282,14 @@ impl<W: LayoutElement> Workspace<W> {
                         self.working_area.loc.y + self.options.gaps,
                     ));
                     if column_index == 0 && !self.columns.is_empty() {
-                        loc.x -= size.w;
+                        loc.x -= size.w + self.options.gaps;
                     }
                     Rectangle::from_loc_and_size(loc, size)
                 } else {
                     let size =
                         Size::from((300., self.working_area.size.h - self.options.gaps * 2.));
                     let loc = Point::from((
-                        self.column_x(column_index) - size.w / 2.,
+                        self.column_x(column_index) - size.w / 2. - self.options.gaps / 2.,
                         self.working_area.loc.y + self.options.gaps,
                     ));
                     Rectangle::from_loc_and_size(loc, size)
