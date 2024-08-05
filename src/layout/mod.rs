@@ -754,6 +754,9 @@ impl<W: LayoutElement> Layout<W> {
         {
             let move_ = self.interactive_move.take().unwrap();
             rv = Some(move_.window.into_window());
+            if let Some(workspace) = self.workspace_for_output_mut(&move_.output) {
+                workspace.clear_insert_hint();
+            }
         }
 
         match &mut self.monitor_set {
