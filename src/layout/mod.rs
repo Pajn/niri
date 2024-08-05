@@ -815,6 +815,21 @@ impl<W: LayoutElement> Layout<W> {
                     for ws in &mut mon.workspaces {
                         if ws.has_window(window) {
                             ws.update_window(window, serial);
+
+                            if let Some(move_) = &mut self.interactive_move {
+                                if move_.output == mon.output {
+                                    let pos_within_output = move_.initial_pointer_location
+                                        + move_.pointer_offset
+                                        - move_.output.current_location().to_f64();
+                                    let position = ws.get_insert_position(pos_within_output);
+                                    ws.set_insert_hint(InsertHint {
+                                        position,
+                                        width: move_.width,
+                                        is_full_width: move_.is_full_width,
+                                    });
+                                }
+                            }
+
                             return;
                         }
                     }
