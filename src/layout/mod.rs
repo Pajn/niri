@@ -305,6 +305,25 @@ impl Options {
     }
 }
 
+impl<W: LayoutElement> InteractiveMoveData<W> {
+    pub fn get_pointer_loc(&self) -> Point<f64, Logical> {
+        self.initial_pointer_location + self.pointer_offset
+            - self.output.current_location().to_f64()
+    }
+
+    pub fn get_precise_window_loc(&self) -> Point<f64, Logical> {
+        let scale = Scale::from(self.output.current_scale().fractional_scale());
+        let window_render_loc =
+            self.initial_pointer_location + self.pointer_offset + self.window_offset
+                - self.output.current_location().to_f64();
+
+        // Round to physical pixels
+        window_render_loc
+            .to_physical_precise_round(scale)
+            .to_logical(scale)
+    }
+}
+
 impl<W: LayoutElement> Layout<W> {
     pub fn new(config: &Config) -> Self {
         Self::with_options_and_workspaces(config, Options::from_config(config))
@@ -821,10 +840,7 @@ impl<W: LayoutElement> Layout<W> {
 
                             if let Some(move_) = &mut self.interactive_move {
                                 if move_.output == mon.output {
-                                    let pos_within_output = move_.initial_pointer_location
-                                        + move_.pointer_offset
-                                        - move_.output.current_location().to_f64();
-                                    let position = ws.get_insert_position(pos_within_output);
+                                    let position = ws.get_insert_position(move_.get_pointer_loc());
                                     ws.set_insert_hint(InsertHint {
                                         position,
                                         width: move_.width,
@@ -1680,9 +1696,7 @@ impl<W: LayoutElement> Layout<W> {
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, Option<Point<f64, Logical>>)> {
         if let Some(move_) = &self.interactive_move {
-            let window_render_loc =
-                move_.initial_pointer_location + move_.pointer_offset + move_.window_offset
-                    - output.current_location().to_f64();
+            let window_render_loc = move_.get_precise_window_loc();
             let pos_within_window = pos_within_output - window_render_loc;
 
             if move_.window.is_in_input_region(pos_within_window) {
@@ -1907,8 +1921,7 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(move_) = &mut self.interactive_move {
             if move_.output == *output {
-                let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
-                    - move_.output.current_location().to_f64();
+                let pos_within_output = move_.get_precise_window_loc();
                 let view_rect =
                     Rectangle::from_loc_and_size(pos_within_output, output_size(&move_.output));
                 move_.window.update(true, view_rect);
@@ -1939,10 +1952,10 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::update_render_elements_all");
 
         if let Some(move_) = &mut self.interactive_move {
-            let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
-                - move_.output.current_location().to_f64();
-            let view_rect =
-                Rectangle::from_loc_and_size(pos_within_output, output_size(&move_.output));
+            let view_rect = Rectangle::from_loc_and_size(
+                move_.get_precise_window_loc(),
+                output_size(&move_.output),
+            );
             move_.window.update(true, view_rect);
         }
 
@@ -2481,9 +2494,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         if let Some(workspace) = self.workspace_for_output_mut(&output) {
-            let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
-                - move_.output.current_location().to_f64();
-            let position = workspace.get_insert_position(pos_within_output);
+            let position = workspace.get_insert_position(move_.get_pointer_loc());
             workspace.set_insert_hint(InsertHint {
                 position,
                 width: move_.width,
@@ -2529,12 +2540,9 @@ impl<W: LayoutElement> Layout<W> {
         .unwrap();
 
         let move_ = self.interactive_move.take().unwrap();
-        let pos_within_output = move_.initial_pointer_location + move_.pointer_offset
-            - move_.output.current_location().to_f64();
-
         let width = ColumnWidth::Fixed(move_.window.window().size().w as f64);
         workspace.clear_insert_hint();
-        let position = workspace.get_insert_position(pos_within_output);
+        let position = workspace.get_insert_position(move_.get_pointer_loc());
         match position {
             InsertPosition::NewColumn(column_idx) => {
                 workspace.add_window_at(column_idx, move_.window.into_window(), true, width, false)
@@ -2770,9 +2778,7 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(ref move_) = self.interactive_move {
             if &move_.output == output {
                 let scale = Scale::from(move_.output.current_scale().fractional_scale());
-                let window_render_loc =
-                    move_.initial_pointer_location + move_.pointer_offset + move_.window_offset
-                        - output.current_location().to_f64();
+                let window_render_loc = move_.get_precise_window_loc();
 
                 rv.extend(
                     move_
