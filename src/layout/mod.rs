@@ -1615,6 +1615,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.switch_workspace_up();
+        self.update_insert_hint();
     }
 
     pub fn switch_workspace_down(&mut self) {
@@ -1622,6 +1623,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.switch_workspace_down();
+        self.update_insert_hint();
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
@@ -1629,6 +1631,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.switch_workspace(idx, false);
+        self.update_insert_hint();
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -1636,6 +1639,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.switch_workspace_auto_back_and_forth(idx);
+        self.update_insert_hint();
     }
 
     pub fn switch_workspace_previous(&mut self) {
@@ -1643,6 +1647,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         monitor.switch_workspace_previous();
+        self.update_insert_hint();
     }
 
     pub fn consume_into_column(&mut self) {
@@ -1993,6 +1998,22 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    fn update_insert_hint(&mut self) {
+        let Some(move_) = self.interactive_move.take() else {
+            return;
+        };
+        let pointer_loc = move_.get_pointer_loc();
+        if let Some(workspace) = self.workspace_for_output_mut(&move_.output) {
+            let position = workspace.get_insert_position(pointer_loc);
+            workspace.set_insert_hint(InsertHint {
+                position,
+                width: move_.width,
+                is_full_width: move_.is_full_width,
+            });
+        }
+        self.interactive_move = Some(move_);
     }
 
     pub fn ensure_named_workspace(&mut self, ws_config: &WorkspaceConfig) {
