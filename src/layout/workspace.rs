@@ -17,7 +17,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
-use super::tile::{Tile, TileRenderElement};
+use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::{ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
@@ -1599,8 +1599,6 @@ impl<W: LayoutElement> Workspace<W> {
         window: &W::Id,
         blocker: TransactionBlocker,
     ) {
-        let output_scale = Scale::from(self.scale.fractional_scale());
-
         let (tile, mut tile_pos) = self
             .tiles_with_render_positions_mut(false)
             .find(|(tile, _)| tile.window().id() == window)
@@ -1647,6 +1645,19 @@ impl<W: LayoutElement> Workspace<W> {
             };
             tile_pos.x -= offset;
         }
+
+        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+    }
+
+    pub fn start_close_animation_for_tile(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        snapshot: TileRenderSnapshot,
+        tile_size: Size<f64, Logical>,
+        tile_pos: Point<f64, Logical>,
+        blocker: TransactionBlocker,
+    ) {
+        let output_scale = Scale::from(self.scale.fractional_scale());
 
         let anim = Animation::new(0., 1., 0., self.options.animations.window_close.anim);
 

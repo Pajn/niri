@@ -90,7 +90,7 @@ niri_render_elements! {
     }
 }
 
-type TileRenderSnapshot =
+pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 #[derive(Debug)]
