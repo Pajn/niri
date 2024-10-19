@@ -1128,10 +1128,6 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn activate_window(&mut self, window: &W::Id) {
-        if self.interactive_move.is_some() {
-            return;
-        }
-
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
