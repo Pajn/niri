@@ -2168,7 +2168,7 @@ impl<W: LayoutElement> Workspace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    fn view_pos(&self) -> f64 {
+    pub fn view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset
     }
 
