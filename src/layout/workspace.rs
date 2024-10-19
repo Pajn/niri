@@ -2304,13 +2304,26 @@ impl<W: LayoutElement> Workspace<W> {
                     return None;
                 }
 
-                let size = Size::from((self.data[column_index].width, 300.));
-                let loc = Point::from((
-                    self.column_x(column_index),
-                    (self.columns[column_index].tile_offset(tile_index).y - size.h / 2.)
-                        .max(self.options.gaps)
-                        .min(self.working_area.size.h - size.h - self.options.gaps),
-                ));
+                let (height, y) = if tile_index == 0 {
+                    (150., self.columns[column_index].tile_offset(tile_index).y)
+                } else if tile_index == self.columns[column_index].tiles.len() {
+                    (
+                        150.,
+                        self.columns[column_index].tile_offset(tile_index).y
+                            - self.options.gaps
+                            - 150.,
+                    )
+                } else {
+                    (
+                        300.,
+                        self.columns[column_index].tile_offset(tile_index).y
+                            - self.options.gaps / 2.
+                            - 150.,
+                    )
+                };
+
+                let size = Size::from((self.data[column_index].width, height));
+                let loc = Point::from((self.column_x(column_index), y));
                 Rectangle::from_loc_and_size(loc, size)
             }
         };
@@ -2320,8 +2333,8 @@ impl<W: LayoutElement> Workspace<W> {
         let view_size = self.view_size();
 
         // Make sure the hint is at least partially visible.
-        hint_area.loc.x = hint_area.loc.x.max(150. - hint_area.size.w);
-        hint_area.loc.x = hint_area.loc.x.min(view_size.w - 150.);
+        hint_area.loc.x = hint_area.loc.x.max(-hint_area.size.w / 2.);
+        hint_area.loc.x = hint_area.loc.x.min(view_size.w - hint_area.size.w / 2.);
 
         // Round to physical pixels.
         hint_area = hint_area
