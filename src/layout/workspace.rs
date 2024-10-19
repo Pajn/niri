@@ -763,13 +763,16 @@ impl<W: LayoutElement> Workspace<W> {
             });
     }
 
-    fn compute_new_view_offset_for_column_fit(&self, current_x: f64, idx: usize) -> f64 {
-        let col = &self.columns[idx];
-        if col.is_fullscreen {
+    fn compute_new_view_offset_fit(
+        &self,
+        current_x: f64,
+        col_x: f64,
+        width: f64,
+        is_fullscreen: bool,
+    ) -> f64 {
+        if is_fullscreen {
             return 0.;
         }
-
-        let new_col_x = self.column_x(idx);
 
         let final_x = if let Some(ViewOffsetAdjustment::Animation(anim)) = &self.view_offset_adj {
             current_x - self.view_offset + anim.to()
@@ -780,8 +783,8 @@ impl<W: LayoutElement> Workspace<W> {
         let new_offset = compute_new_view_offset(
             final_x + self.working_area.loc.x,
             self.working_area.size.w,
-            new_col_x,
-            col.width(),
+            col_x,
+            width,
             self.options.gaps,
         );
 
@@ -789,20 +792,43 @@ impl<W: LayoutElement> Workspace<W> {
         new_offset - self.working_area.loc.x
     }
 
-    fn compute_new_view_offset_for_column_centered(&self, current_x: f64, idx: usize) -> f64 {
-        let col = &self.columns[idx];
-        if col.is_fullscreen {
-            return self.compute_new_view_offset_for_column_fit(current_x, idx);
+    fn compute_new_view_offset_centered(
+        &self,
+        current_x: f64,
+        col_x: f64,
+        width: f64,
+        is_fullscreen: bool,
+    ) -> f64 {
+        if is_fullscreen {
+            return self.compute_new_view_offset_fit(current_x, col_x, width, is_fullscreen);
         }
-
-        let width = col.width();
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
         if self.working_area.size.w <= width {
-            return self.compute_new_view_offset_for_column_fit(current_x, idx);
+            return self.compute_new_view_offset_fit(current_x, col_x, width, is_fullscreen);
         }
 
         -(self.working_area.size.w - width) / 2. - self.working_area.loc.x
+    }
+
+    fn compute_new_view_offset_for_column_fit(&self, current_x: f64, idx: usize) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_fit(
+            current_x,
+            self.column_x(idx),
+            col.width(),
+            col.is_fullscreen,
+        )
+    }
+
+    fn compute_new_view_offset_for_column_centered(&self, current_x: f64, idx: usize) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_centered(
+            current_x,
+            self.column_x(idx),
+            col.width(),
+            col.is_fullscreen,
+        )
     }
 
     fn compute_new_view_offset_for_column(
