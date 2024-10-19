@@ -1881,7 +1881,25 @@ impl<W: LayoutElement> Layout<W> {
     fn verify_invariants(&self) {
         use std::collections::HashSet;
 
+        use approx::assert_abs_diff_eq;
+
         use crate::layout::monitor::WorkspaceSwitch;
+
+        if let Some(move_) = &self.interactive_move {
+            let scale = move_.output.current_scale().fractional_scale();
+            let options = Options::clone(&self.options).adjusted_for_scale(scale);
+            assert_eq!(
+                &*move_.tile.options, &options,
+                "interactive moved tile options must be base options adjusted for output scale"
+            );
+
+            let tile_pos = move_.tile_render_location();
+            let rounded_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+
+            // Tile position must be rounded to physical pixels.
+            assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
+            assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
+        }
 
         let mut seen_workspace_id = HashSet::new();
         let mut seen_workspace_name = Vec::<String>::new();
@@ -2757,9 +2775,10 @@ impl<W: LayoutElement> Layout<W> {
                 .tile
                 .window()
                 .set_preferred_scale_transform(output.current_scale(), output.current_transform());
+            let scale = output.current_scale().fractional_scale();
             move_.tile.update_config(
-                output.current_scale().fractional_scale(),
-                self.options.clone(),
+                scale,
+                Rc::new(Options::clone(&self.options).adjusted_for_scale(scale)),
             );
             move_.output = output.clone();
             self.focus_output(&output);
