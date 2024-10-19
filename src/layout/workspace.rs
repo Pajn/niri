@@ -1005,67 +1005,48 @@ impl<W: LayoutElement> Workspace<W> {
         if self.columns.is_empty() {
             return InsertPosition::NewColumn(0);
         }
-        let Some((target_window, direction)) =
-            self.tiles_with_render_positions()
-                .find_map(|(tile, tile_pos)| {
-                    let pos_within_tile = pos - tile_pos;
 
-                    if tile.is_in_input_region(pos_within_tile)
-                        || tile.is_in_activation_region(pos_within_tile)
-                    {
-                        let size = tile.tile_size().to_f64();
+        let x = pos.x + self.view_pos();
 
-                        let mut edges = ResizeEdge::empty();
-                        if pos_within_tile.x < size.w / 3. {
-                            edges |= ResizeEdge::LEFT;
-                        } else if 2. * size.w / 3. < pos_within_tile.x {
-                            edges |= ResizeEdge::RIGHT;
-                        }
-                        if pos_within_tile.y < size.h / 3. {
-                            edges |= ResizeEdge::TOP;
-                        } else if 2. * size.h / 3. < pos_within_tile.y {
-                            edges |= ResizeEdge::BOTTOM;
-                        }
-                        return Some((tile.window().id(), edges));
-                    }
+        // Aim for the center of the gap.
+        let x = x + self.options.gaps / 2.;
+        let y = pos.y + self.options.gaps / 2.;
 
-                    None
-                })
-        else {
-            let x = pos.x + self.view_pos();
-            // Aim for the center of the gap.
-            let x = x + self.options.gaps / 2.;
-            let (col_idx, _) = self
-                .column_xs(self.data.iter().copied())
-                .enumerate()
-                .min_by_key(|(_, col_x)| NotNan::new((col_x - x).abs()).unwrap())
-                .unwrap();
-            return InsertPosition::NewColumn(col_idx);
-        };
-
-        let mut target_column_idx = self
-            .columns
-            .iter()
-            .position(|col| col.contains(target_window))
+        // Find the closest gap between columns.
+        let (closest_col_idx, col_x) = self
+            .column_xs(self.data.iter().copied())
+            .enumerate()
+            .min_by_key(|(_, col_x)| NotNan::new((col_x - x).abs()).unwrap())
             .unwrap();
 
-        if direction.contains(ResizeEdge::LEFT) || direction.contains(ResizeEdge::RIGHT) {
-            if direction.contains(ResizeEdge::RIGHT) {
-                target_column_idx += 1;
-            }
-            InsertPosition::NewColumn(target_column_idx)
-        } else if direction.contains(ResizeEdge::TOP) || direction.contains(ResizeEdge::BOTTOM) {
-            let mut target_window_idx = self.columns[target_column_idx]
-                .tiles
-                .iter()
-                .position(|tile| tile.window().id() == target_window)
-                .unwrap();
-            if direction.contains(ResizeEdge::BOTTOM) {
-                target_window_idx += 1;
-            }
-            InsertPosition::InColumn(target_column_idx, target_window_idx)
+        // Find the column containing the position.
+        let (col_idx, _) = self
+            .column_xs(self.data.iter().copied())
+            .enumerate()
+            .take_while(|(_, col_x)| *col_x <= x)
+            .last()
+            .unwrap_or((0, 0.));
+
+        // Insert position is past the last column.
+        if col_idx == self.columns.len() {
+            return InsertPosition::NewColumn(closest_col_idx);
+        }
+
+        // Find the closest gap between tiles.
+        let col = &self.columns[col_idx];
+        let (closest_tile_idx, tile_off) = col
+            .tile_offsets()
+            .enumerate()
+            .min_by_key(|(_, tile_off)| NotNan::new((tile_off.y - y).abs()).unwrap())
+            .unwrap();
+
+        // Return the closest among the vertical and the horizontal gap.
+        let vert_dist = (col_x - x).abs();
+        let hor_dist = (tile_off.y - y).abs();
+        if vert_dist <= hor_dist {
+            InsertPosition::NewColumn(closest_col_idx)
         } else {
-            InsertPosition::NewColumn(target_column_idx)
+            InsertPosition::InColumn(col_idx, closest_tile_idx)
         }
     }
 
