@@ -2354,7 +2354,18 @@ impl<W: LayoutElement> Workspace<W> {
             }
         };
 
-        hint_area.loc.x -= self.view_pos();
+        // First window on an empty workspace will cancel out any view offset. Replicate this
+        // effect here.
+        if self.columns.is_empty() {
+            let view_offset = if self.is_centering_focused_column() {
+                self.compute_new_view_offset_centered(0., 0., hint_area.size.w, false)
+            } else {
+                self.compute_new_view_offset_fit(0., 0., hint_area.size.w, false)
+            };
+            hint_area.loc.x -= view_offset;
+        } else {
+            hint_area.loc.x -= self.view_pos();
+        }
 
         let view_size = self.view_size();
 
